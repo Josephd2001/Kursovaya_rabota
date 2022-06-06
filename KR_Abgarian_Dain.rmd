@@ -1,0 +1,999 @@
+---
+title: "Kursovaya rabota"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+
+#install.packages("forecast")
+library("forecast")
+#install.packages("lmtest")
+library("lmtest")
+#install.packages("tseries")
+library("tseries")
+#install.packages("urca")
+library("urca")
+#install.packages("TSA")
+library("TSA")
+
+```
+
+КУРСАЧ ВЕРСИЯ 2.0
+
+```{r}
+library(tidyr)
+library(readxl)
+library(dplyr)
+market1 <- read_excel("Арен, Джозеф, курсовая (1).xlsx")
+data1 = market1 %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "period",
+   values_to = "price",
+   values_drop_na = F
+ )
+data1
+
+data1$region=as.factor(data1$region)
+data1$type=as.factor(data1$type)
+data1$period=as.factor(data1$period)
+
+data1_2 = data1 %>% 
+       mutate(has_na = case_when(is.na(price) ~ 1,
+                             TRUE ~ 0)) %>% group_by(region,type) %>% tally(has_na)
+data1_cleaned = data1_2 %>% filter(n == 0)
+
+data1cleaned_new = inner_join(data1_cleaned %>% select(-n), data1)
+unique(data1cleaned_new$region)
+
+VRP <- read_excel("ВРП.xlsx")
+
+data1cleaned_new = data1cleaned_new %>% separate(period, into = paste(("year"), 1:2,sep = "_"), sep="_", remove = F)
+data1cleaned_new = data1cleaned_new %>% rename(year = year_1)
+data1cleaned_new = data1cleaned_new %>% rename(quarter = year_2)
+
+
+VRP$`2002`=as.numeric(VRP$`2002`)
+VRP$`2003`=as.numeric(VRP$`2003`)
+VRP$`2004`=as.numeric(VRP$`2004`)
+
+VRP = VRP %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "year",
+   values_to = "VRP",
+   values_drop_na = FALSE
+ )
+
+data1cleaned_new = inner_join(data1cleaned_new, VRP)
+
+unemp <- read_excel("Безработица.xlsx")
+
+unemp$`2002`=as.numeric(unemp$`2002`)
+unemp$`2003`=as.numeric(unemp$`2003`)
+unemp$`2004`=as.numeric(unemp$`2004`)
+unemp$`2005`=as.numeric(unemp$`2005`)
+unemp$`2001`=as.numeric(unemp$`2001`)
+unemp$`2000`=as.numeric(unemp$`2000`)
+
+unemp = unemp %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "year",
+   values_to = "unemp",
+   values_drop_na = FALSE
+ )
+
+data1cleaned_new = inner_join(data1cleaned_new, unemp)
+
+zp <- read_excel("Зп.xlsx")
+zp = zp %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "year",
+   values_to = "zp",
+   values_drop_na = FALSE
+ )
+
+data1cleaned_new = inner_join(data1cleaned_new, zp)
+
+pop <- read_excel("численность.xlsx")
+
+pop = pop %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "year",
+   values_to = "pop",
+   values_drop_na = FALSE
+ )
+
+data1cleaned_new = inner_join(data1cleaned_new, pop)
+
+ipc <- read_excel("ИПЦ.xlsx")
+
+ipc = ipc %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "period",
+   values_to = "ipc",
+   values_drop_na = FALSE
+ )
+
+
+
+
+data1cleaned_new = inner_join(data1cleaned_new, ipc,by = c("region", "period"))
+
+vvod <- read_excel("stroi_131a (1).xlsx")
+
+vvod = vvod %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "year",
+   values_to = "quantity",
+   values_drop_na = F
+ )
+
+
+dollar = read_excel("currency rate.xlsx")
+dollar$period = dollar$Period
+dollar$currency = dollar$Price
+
+data1cleaned_new = inner_join(data1cleaned_new,vvod)
+data1cleaned_new = inner_join(data1cleaned_new, dollar %>% select(-`Дата`,-Year,-Quarter,-Period, -Price), by = "period")
+
+data1cleaned_new = data1cleaned_new %>% mutate(price_real = price*100/ipc)
+data1cleaned_new = data1cleaned_new %>% mutate(VRP_real = VRP*100/ipc)
+data1cleaned_new = data1cleaned_new %>% mutate(zp_real = zp*100/ipc)
+```
+
+```{r}
+market2 <- read_excel("Цены 2.xlsx")
+market2$`2013_1_quarter` = as.numeric(market2$`2013_1_quarter`)
+market2$`2013_2_quarter` = as.numeric(market2$`2013_2_quarter`)
+market2$`2013_3_quarter` = as.numeric(market2$`2013_3_quarter`)
+market2$`2013_4_quarter` = as.numeric(market2$`2013_4_quarter`)
+
+market2$`2014_1_quarter` = as.numeric(market2$`2014_1_quarter`)
+market2$`2014_2_quarter` = as.numeric(market2$`2014_2_quarter`)
+market2$`2014_3_quarter` = as.numeric(market2$`2014_3_quarter`)
+market2$`2014_4_quarter` = as.numeric(market2$`2014_4_quarter`)
+
+market2$`2015_1_quarter` = as.numeric(market2$`2015_1_quarter`)
+market2$`2015_2_quarter` = as.numeric(market2$`2015_2_quarter`)
+market2$`2015_3_quarter` = as.numeric(market2$`2015_3_quarter`)
+market2$`2015_4_quarter` = as.numeric(market2$`2015_4_quarter`)
+
+market2$`2016_1_quarter` = as.numeric(market2$`2016_1_quarter`)
+market2$`2016_2_quarter` = as.numeric(market2$`2016_2_quarter`)
+market2$`2016_3_quarter` = as.numeric(market2$`2016_3_quarter`)
+market2$`2016_4_quarter` = as.numeric(market2$`2016_4_quarter`)
+
+market2$`2017_1_quarter` = as.numeric(market2$`2017_1_quarter`)
+market2$`2017_2_quarter` = as.numeric(market2$`2017_2_quarter`)
+market2$`2017_3_quarter` = as.numeric(market2$`2017_3_quarter`)
+market2$`2017_4_quarter` = as.numeric(market2$`2017_4_quarter`)
+
+market2$`2018_1_quarter` = as.numeric(market2$`2018_1_quarter`)
+market2$`2018_2_quarter` = as.numeric(market2$`2018_2_quarter`)
+market2$`2018_3_quarter` = as.numeric(market2$`2018_3_quarter`)
+market2$`2018_4_quarter` = as.numeric(market2$`2018_4_quarter`)
+
+market2$`2021_1_quarter` = as.numeric(market2$`2021_1_quarter`)
+market2$`2021_2_quarter` = as.numeric(market2$`2021_2_quarter`)
+market2$`2021_3_quarter` = as.numeric(market2$`2021_3_quarter`)
+
+
+data2 = market2 %>%
+ pivot_longer(
+   cols = starts_with("20"),
+   names_to = "period",
+   values_to = "price",
+   values_drop_na = F
+ )
+data2
+
+data2$region=as.factor(data2$region)
+data2$type=as.factor(data2$type)
+data2$period=as.factor(data2$period)
+
+data2_1 = data2 %>% 
+       mutate(has_na = case_when(is.na(price) ~ 1,
+                             TRUE ~ 0)) %>% group_by(region,type) %>% tally(has_na)
+data2_cleaned = data2_1 %>% filter(n == 0)
+
+data2cleaned_new = inner_join(data2_cleaned %>% select(-n), data2)
+
+data2cleaned_new = data2cleaned_new %>% separate(period, into = paste(("year"), 1:2,sep = "_"), sep="_", remove = F)
+data2cleaned_new = data2cleaned_new %>% rename(year = year_1)
+data2cleaned_new = data2cleaned_new %>% rename(quarter = year_2)
+
+
+
+data2cleaned_new = inner_join(data2cleaned_new, VRP)
+
+
+data2cleaned_new = inner_join(data2cleaned_new, unemp)
+
+
+data2cleaned_new = inner_join(data2cleaned_new, zp)
+
+
+data2cleaned_new = inner_join(data2cleaned_new, pop)
+
+
+data2cleaned_new = inner_join(data2cleaned_new, ipc,by = c("region", "period"))
+
+
+data2cleaned_new = inner_join(data2cleaned_new,vvod)
+
+data2cleaned_new = inner_join(data2cleaned_new, dollar %>% select(-`Дата`,-Year,-Quarter,-Period, -Price), by = "period")
+
+data2cleaned_new = data2cleaned_new %>% mutate(price_real = price*100/ipc)
+data2cleaned_new = data2cleaned_new %>% mutate(VRP_real = VRP*100/ipc)
+data2cleaned_new = data2cleaned_new %>% mutate(zp_real = zp*100/ipc)
+```
+
+```{r}
+
+data1cleaned_new$region=as.factor(data1cleaned_new$region)
+data1cleaned_new$period=as.factor(data1cleaned_new$period)
+
+vse_1 = data1cleaned_new %>% filter(type == "Все типы квартир")
+vse_1 = vse_1 %>% dplyr::select(-quarter,-ipc, -type, -year,-price,-VRP, -zp)
+vse_1 = as.data.frame(vse_1)
+vse_1$l_price_real = log(vse_1$price_real)
+vse_1$l_VRP_real = log(vse_1$VRP_real)
+vse_1$l_unemp = log(vse_1$unemp)
+vse_1$l_zp_real = log(vse_1$zp_real)
+vse_1$l_pop = log(vse_1$pop)
+vse_1$l_quantity = log(vse_1$quantity)
+vse_1$l_currency = log(vse_1$currency)
+vse_rus1 = vse_1 %>% filter(region == "Российская Федерация")
+vse_rus1_xlsx = write_xlsx(as.data.frame(vse_rus1$price_real),"vserus1.xlsx")
+vse_1 = vse_1 %>% filter(region != "Российская Федерация")
+summary(vse_1)
+```
+
+
+Циклическая ARMA
+
+```{r}
+library(writexl)
+listofreg <- list() #Create a list in which you intend to save your df's.
+for (i in unique(vse_1$region)){
+   regions = vse_1 %>% dplyr::filter(region == i) %>% select(period, l_price_real, l_VRP_real, l_unemp, l_quantity, l_pop, l_currency)
+   listofreg[[i]] <- regions
+}
+
+
+listofd1 = list()
+for (i in unique(vse_1$region)){d1_log_real_price = diff(listofreg[[i]]$l_price_real,differences = 1)
+listofd1[[i]] = d1_log_real_price}
+
+listofarima = list()
+for (m in unique(vse_1$region)){a = auto.arima(listofreg[[m]]$l_price_real, ic ="aic")
+listofarima[[m]] = a}
+
+Moscow = write_xlsx(as.data.frame(listofreg$Москва$l_price_real),"Moscow.xlsx")
+SPB = write_xlsx(as.data.frame(listofreg$`Санкт-Петербург`$l_price_real),"SPB.xlsx")
+SVRDL = write_xlsx(as.data.frame(listofreg$`Свердловская область`$l_price_real),"SVRDL.xlsx")
+library(ggplot2)
+"СПБ"
+as.data.frame(forecast(listofarima$`Санкт-Петербург`, h=5))[5,1]
+plot(forecast(listofarima$`Санкт-Петербург`, h=5),main="Санкт-Петербург",
+ylab="Логарифмированные цены", xlab ="Период")
+SPB_for = write_xlsx(as.data.frame(forecast(listofarima$`Санкт-Петербург`,h = 5)),"SPB_for.xlsx")
+
+plot(forecast(listofarima$`Свердловская область`, h=5),main="Свердловская область",
+ylab="Логарифмированные цены", xlab ="Период")
+SVRDL_for = write_xlsx(as.data.frame(forecast(listofarima$`Свердловская область`,h = 5)),"SVRDL_for.xlsx")
+
+plot(forecast(listofarima$Москва, h=5),main="Москва",
+ylab="Логарифмированные цены", xlab ="Период")
+Moscow_for = write_xlsx(as.data.frame(forecast(listofarima$Москва,h = 5)),"Moscow_for.xlsx")
+
+
+ARMAregionfor1 = list()
+for (i in unique(vse_1$region)){
+forecast = as.data.frame(forecast(listofarima[[i]], h=5))[4,1]
+ARMAregionfor1[[i]] = forecast}
+
+pr21_3 = list()
+for (i in unique(vse_1$region)){
+price21_3 = listofreg[[i]][79,2]
+pr21_3[[i]] = price21_3}
+
+
+as.data.frame(listofpanel[[10]]$fd_l_price_real)
+library(tidyverse)
+AR1 = do.call(rbind, lapply(ARMAregionfor1, as.data.frame))
+Price213 = do.call(rbind, lapply(pr21_3, as.data.frame))
+AR1$forecast = AR1$`X[[i]]`
+AR1$exp_forecast = exp(AR1$forecast)
+AR1 = rownames_to_column(AR1, var = "region")
+Price213$price = Price213$`X[[i]]`
+Price213$exp_price = exp(Price213$price)
+Price213 = rownames_to_column(Price213, var = "region")
+AR1 = AR1 %>% select(-`X[[i]]`)
+Price213 = Price213 %>% select(-`X[[i]]`)
+ar1withprice = inner_join(AR1, Price213, by ="region")
+ar1withprice$growth = ar1withprice$exp_forecast/ar1withprice$exp_price - 1
+
+ar1withprice_xlsx = write_xlsx(ar1withprice,"ar1withprice.xlsx")
+```
+
+
+```{r}
+library("forecast")
+library("lmtest")
+library("tseries")
+library("vars")
+library("urca")
+library("TSA")
+library("Matrix")
+library("matlib")
+library("portes")
+VARbetter = NULL
+VARworse = NULL
+listofVARs = list()
+for (i in 20:20){
+l = listofd1[[i]]
+
+dfregion = data.frame(l,listofd1VRP[[i]], listofd1unemp[[i]],listofd1q[[i]],listofd1pop[[i]])
+
+var<-VAR(dfregion, p = 5, type = "const")
+
+var<-restrict(var, method = c("ser"), thresh = 1)
+summary(var)
+#coef(var)
+#Проверка авто и кросс корреляции
+Hosking(var,lags=10) #по сути если наша цель создать модель для прогнозов, наличие авто и кросс корреляции можно опустить
+LiMcLeod(var,lags=10)
+'прогноз реальной цены по VAR модели'
+'вычисляем дисперсию ошибки'
+c_inf<-pnorm(1, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)-
+  pnorm(-1, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+# 4) на данном этапе строится предсказания по VAR модели на 10 периодов вперед
+ff<-predict(var, n.ahead = 5, ci = c_inf)
+# 5) тут вычисляется дисперсия ошибки (верхний прогоз - средний прогноз)^2
+Derr<-(ff$fcst$l[,c("upper")]-ff$fcst$l[,c("fcst")])^2
+'задаем вероятность дов. интервала'
+prob<-0.95
+# коэф., соотвествующий прогнозной вероятности, в соответствии с нормальным распределением
+kk<-qnorm(prob, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+'строим прогноз логарифма'
+# 6) здесь соотвественно строятся прогнозы самой цены и дов. интервалов
+f<-rep(0,length(Derr))
+# здесь задаются вектора с историческими и прогнозными значениями
+regprice_for<-c(listofreg[[i]]$l_price_real, f)
+regprice_up<-c(listofreg[[i]]$l_price_real, f)
+regprice_low<-c(listofreg[[i]]$l_price_real, f)
+T<-length(listofreg[[i]]$l_price_real)
+k<-1
+while(k<length(Derr)+1)
+{
+  
+  regprice_for[T+k]<-regprice_for[T+k-1]+ff$fcst$l[k,c("fcst")]
+  
+  regprice_up[T+k]<-regprice_up[T+k-1]+ff$fcst$l[k,c("fcst")]+kk*(Derr[k]/k)^0.5
+  # аналогично с верхним прогнозом
+  regprice_low[T+k]<-regprice_low[T+k-1]+ff$fcst$l[k,c("fcst")]-kk*(Derr[k]/k)^0.5
+  k<-k+1
+}
+plot(regprice_up)
+lines(regprice_for)
+lines(regprice_low)
+
+up_for = exp(data.frame(regprice_up))
+#write_xlsx(CIQat1,"CIQat1.xlsx")
+low_for = exp(data.frame(regprice_low))
+#write_xlsx(CIQat2,"CIQat2.xlsx")
+regprice_for = exp(data.frame(regprice_for))
+regprice_for
+#write_xlsx(Bugaga,"Qatpc1.xlsx")
+all_for = data.frame(up_for,regprice_for,low_for)
+listofVARs[[i]] = all_for
+
+model=listofarima[[i]]
+n = length(coef(model)) - 1
+x = var$p - n + 1
+rss = sum(model$residuals[x:length(residuals(model))]^2)
+R2 = 1 - rss/sum((l[x:length(l)]-mean(l[x:length(l)]))^2)
+R2
+adjR2 = 1 - (1-R2)*(length(residuals(model))-1)/(length(residuals(model))-n-1-1)
+adjR2
+
+n1<-var$varresult$l$rank-1
+ess1<-sum(var$varresult$l$residuals^2)
+Fstat<-((rss-ess1)/(n1-n))/(ess1/(length(l)-2*n1-1))
+
+if (Fstat>qf(0.99, df1=n1-n, df2=length(l)-2*n1-1)) {
+      VARbetter <- c(VARbetter, i)
+      #return(stno)
+   }
+      else {VARworse <-c(VARworse,i)}
+}
+
+listofVARs[[20]]
+plot(listofVARs[[20]]$regprice_for)
+lines(listofVARs[[20]]$regprice_low)
+lines(listofVARs[[20]]$regprice_up)
+```
+
+
+
+```{r}
+#install.packages("panelvar")
+library(panelvar)
+library(pacman)
+
+vec_ex = c("l_price_real","l_VRP_real", "l_unemp", "l_pop", "l_quantity", "l_currency")
+
+
+
+
+summary(panel_1_vse)
+coefs = panel_1_vse$second_step
+listofpanel = list()
+for (i in 1:60){
+y = t(data.frame(l_price_real = listofreg[[i]]$l_price_real,l_VRP_real = listofreg[[i]]$l_VRP_real,l_unemp = listofreg[[i]]$l_unemp,l_pop = listofreg[[i]]$l_pop, l_quantity = listofreg[[i]]$l_quantity,l_currency = listofreg[[i]]$l_currency,const = 1))
+f = t(fixedeffects(panel_1_vse)[[i]])
+b = t(coefs%*%y)
+for (k in 1:6){
+  b[,k] = b[,k]+f[,k]
+}
+b=as.data.frame(b)
+listofpanel[[i]] = b
+}
+
+plot(forecast(listofpanel[[20]]$fd_l_price_real, h=5),main="Москва",
+ylab="Логарифмированные цены", xlab ="Период")
+Moscow_for_panel = write_xlsx(as.data.frame(forecast(listofpanel[[20]]$fd_l_price_real, h=5)),"Moscow_for_panel.xlsx")
+
+plot(forecast(listofpanel[[45]]$fd_l_price_real, h=5),main="Санкт-Петербург",
+ylab="Логарифмированные цены", xlab ="Период")
+SPB_for_panel = write_xlsx(as.data.frame(forecast(listofpanel[[45]]$fd_l_price_real, h=5)),"SPB_for_panel.xlsx")
+
+plot(forecast(listofpanel[[47]]$fd_l_price_real, h=5),main="Свердловская область",
+ylab="Логарифмированные цены", xlab ="Период")
+SVRDL_for_panel = write_xlsx(as.data.frame(forecast(listofpanel[[47]]$fd_l_price_real, h=5)),"SVRDL_for_panel.xlsx")
+
+pr21_3 = list()
+for (i in 1:60){
+price21_3 = exp(as.data.frame(listofpanel[[i]]$fd_l_price_real)[79,1])
+pr21_3[[i]] = price21_3}
+Price213 = do.call(rbind, lapply(pr21_3, as.data.frame))
+
+Mos1 = as.data.frame(exp(listofreg[[20]]$l_price_real))
+Mos1$panel_price = exp(listofpanel[[20]]$fd_l_price_real)
+Mos1prices = write_xlsx(Mos1,"Mos1.xlsx")
+
+SPB1 = as.data.frame(exp(listofreg[[45]]$l_price_real))
+SPB1$panel_price = exp(listofpanel[[45]]$fd_l_price_real)
+SPB1prices = write_xlsx(SPB1,"SPB1.xlsx")
+
+SVRDL1 = as.data.frame(exp(listofreg[[47]]$l_price_real))
+SVRDL1$panel_price = exp(listofpanel[[47]]$fd_l_price_real)
+SVRDL1prices = write_xlsx(SVRDL1,"SVRDL1.xlsx")
+
+panelregionfor = list()
+for (i in 1:60){
+forecast = as.data.frame(forecast(listofpanel[[i]]$fd_l_price_real, h=5))[4,1]
+panelregionfor[[i]] = forecast}
+panel1 = do.call(rbind, lapply(panelregionfor, as.data.frame))
+panel1$forecast = panel1$`X[[i]]`
+panel1$exp_forecast = exp(panel1$forecast)
+panel1 = rownames_to_column(panel1, var = "region")
+panel1$region = unique(vse_1$region)
+panel1 = panel1 %>% select(-`X[[i]]`)
+#panel1withprice = inner_join(panel1, Price213, by = "region")
+panel1$exp_price = Price213$`X[[i]]`
+
+panel1$growth = panel1$exp_forecast/panel1$exp_price - 1
+
+panel1withprice_xlsx = write_xlsx(panel1,"panel1withprice.xlsx")
+
+
+ARIMA1_Mos_train <- auto.arima(listofreg[[20]]$l_price_real[1:63])
+ARIMA1_Mos_test <- Arima(listofreg[[20]]$l_price_real[64:79],model=listofarima[[20]])
+
+panel1_Mos_train <- as.data.frame(as.matrix(panel_1_vse$residuals[[20]]))$fd_l_price_real[1:122]
+panel1_Mos_test <- as.data.frame(as.matrix(panel_1_vse$residuals[[20]]))$fd_l_price_real[123:153]
+
+ARIMA1_SPB_train <- auto.arima(listofreg[[45]]$l_price_real[1:63])
+ARIMA1_SPB_test <- Arima(listofreg[[45]]$l_price_real[64:79],model=listofarima[[45]])
+
+panel1_SPB_train <- as.data.frame(as.matrix(panel_1_vse$residuals[[45]]))$fd_l_price_real[1:122]
+panel1_SPB_test <- as.data.frame(as.matrix(panel_1_vse$residuals[[45]]))$fd_l_price_real[123:153]
+
+ARIMA1_SVRDL_train <- auto.arima(listofreg[[47]]$l_price_real[1:63])
+ARIMA1_SVRDL_test <- Arima(listofreg[[47]]$l_price_real[64:79],model=listofarima[[47]])
+
+panel1_SVRDL_train <- as.data.frame(as.matrix(panel_1_vse$residuals[[47]]))$fd_l_price_real[1:122]
+panel1_SVRDL_test <- as.data.frame(as.matrix(panel_1_vse$residuals[[47]]))$fd_l_price_real[123:153]
+
+
+
+dm.test(
+residuals(ARIMA1_Mos_test),
+panel1_Mos_test,
+h = 1,
+alternative ="less"
+)
+
+
+dm.test(
+residuals(ARIMA1_SPB_test),
+panel1_SPB_test,
+h = 1,
+alternative ="less"
+)
+
+dm.test(
+residuals(ARIMA1_SVRDL_test),
+panel1_SVRDL_test,
+h = 1,
+alternative ="less"
+)
+
+
+
+
+rmsfe_model_panel1_Mos=sqrt(mean((panel1_Mos_test)^2))
+rmsfe_model_panel1_Mos
+rmsfe_model_Arima1_Mos = sqrt(mean(residuals(ARIMA1_Mos_test)^2))
+rmsfe_model_Arima1_Mos
+
+rmsfe_model_panel1_spb=sqrt(mean((panel1_SPB_test)^2))
+rmsfe_model_panel1_spb
+rmsfe_model_Arima1_spb = sqrt(mean(residuals(ARIMA1_SPB_test)^2))
+rmsfe_model_Arima1_spb
+
+rmsfe_model_panel1_svrdl=sqrt(mean((panel1_SVRDL_test)^2))
+rmsfe_model_panel1_svrdl
+rmsfe_model_Arima1_svrdl = sqrt(mean(residuals(ARIMA1_SVRDL_test)^2))
+rmsfe_model_Arima1_svrdl
+```
+
+
+Вторичный рынок
+
+```{r}
+
+data2cleaned_new$region=as.factor(data2cleaned_new$region)
+data2cleaned_new$period=as.factor(data2cleaned_new$period)
+
+vse_2 = data2cleaned_new %>% filter(type == "Все типы квартир")
+vse_2 = vse_2 %>% dplyr::select(-quarter,-ipc, -type, -year,-price,-VRP, -zp)
+vse_2 = as.data.frame(vse_2)
+vse_2$l_price_real = log(vse_2$price_real)
+vse_2$l_VRP_real = log(vse_2$VRP_real)
+vse_2$l_unemp = log(vse_2$unemp)
+vse_2$l_zp_real = log(vse_2$zp_real)
+vse_2$l_pop = log(vse_2$pop)
+vse_2$l_quantity = log(vse_2$quantity)
+vse_2$l_currency = log(vse_2$currency)
+vse_rus = vse_2 %>% filter(region == "Российская Федерация")
+vse_rus2_xlsx = write_xlsx(as.data.frame(vse_rus$price_real),"vserus2.xlsx")
+vse_2 = vse_2 %>% filter(region != "Российская Федерация")
+summary(vse_2)
+```
+
+
+```{r}
+listofreg2 <- list() #Create a list in which you intend to save your df's.
+for (i in unique(vse_2$region)){
+   regions = vse_2 %>% dplyr::filter(region == i) %>% select(period, l_price_real, l_VRP_real, l_unemp, l_quantity, l_pop, l_currency)
+   listofreg2[[i]] <- regions
+}
+
+listofreg2[61]
+listofd1_2 = list()
+for (i in unique(vse_2$region)){d1_log_real_price = diff(listofreg2[[i]]$l_price_real,differences = 1)
+listofd1_2[[i]] = d1_log_real_price}
+
+
+
+listofarima2 = list()
+for (m in unique(vse_2$region)){a = auto.arima(listofreg2[[m]]$l_price_real, ic ="aic")
+listofarima2[[m]] = a}
+
+Moscow_2 = write_xlsx(as.data.frame(listofreg2$Москва$l_price_real),"Moscow_2.xlsx")
+SPB_2 = write_xlsx(as.data.frame(listofreg2$`Санкт-Петербург`$l_price_real),"SPB_2.xlsx")
+SVRDL_2 = write_xlsx(as.data.frame(listofreg2$`Свердловская область`$l_price_real),"SVRDL_2.xlsx")
+
+plot(forecast(listofarima2$`Санкт-Петербург`, h=5),main="Санкт-Петербург",
+ylab="Логарифмированные цены", xlab ="Период")
+SPB_for2 = write_xlsx(as.data.frame(forecast(listofarima2$`Санкт-Петербург`,h = 5)),"SPB_for2.xlsx")
+
+plot(forecast(listofarima2$`Свердловская область`, h=5),main="Свердловская область",
+ylab="Логарифмированные цены", xlab ="Период")
+SVRDL_for2 = write_xlsx(as.data.frame(forecast(listofarima2$`Свердловская область`,h = 5)),"SVRDL_for2.xlsx")
+
+plot(forecast(listofarima2$Москва, h=5),main="Москва",
+ylab="Логарифмированные цены", xlab ="Период")
+Moscow_for2 = write_xlsx(as.data.frame(forecast(listofarima2$Москва,h = 5)),"Moscow_for2.xlsx")
+
+ARMAregionfor2 = list()
+for (i in unique(vse_2$region)){
+forecast = as.data.frame(forecast(listofarima2[[i]], h=5))[4,1]
+ARMAregionfor2[[i]] = forecast}
+
+pr21_3_vtor = list()
+for (i in 1:74){
+price21_3_2 = exp(as.data.frame(listofpanel2[[i]]$fd_l_price_real)[79,1])
+pr21_3_vtor[[i]] = price21_3_2}
+
+library(tidyverse)
+Price213_2 = do.call(rbind, lapply(pr21_3_vtor, as.data.frame))
+AR2 = do.call(rbind, lapply(ARMAregionfor2, as.data.frame))
+AR2$forecast = AR2$`X[[i]]`
+AR2$exp_forecast = exp(AR2$forecast)
+AR2 = rownames_to_column(AR2, var = "region")
+Price213_2$price = Price213_2$`X[[i]]`
+Price213_2$exp_price = exp(Price213_2$price)
+Price213_2 = rownames_to_column(Price213_2, var = "region")
+AR2 = AR2 %>% select(-`X[[i]]`)
+Price213_2 = Price213_2 %>% select(-`X[[i]]`)
+ar2withprice = inner_join(AR2, Price213_2, by ="region")
+ar2withprice$growth = ar2withprice$exp_forecast/ar2withprice$exp_price - 1
+
+ar2withprice_xlsx = write_xlsx(ar2withprice,"ar2withprice.xlsx")
+```
+
+
+```{r}
+
+
+summary(panel_2_vse)
+coefs2 = panel_2_vse$second_step
+listofpanel2 = list()
+for (i in 1:74){
+y2 = t(data.frame(l_price_real = listofreg2[[i]]$l_price_real,l_VRP_real = listofreg2[[i]]$l_VRP_real,l_unemp = listofreg2[[i]]$l_unemp,l_pop = listofreg2[[i]]$l_pop, l_quantity = listofreg2[[i]]$l_quantity, l_currency = listofreg2[[i]]$l_currency,const = 1))
+f2 = t(fixedeffects(panel_2_vse)[[i]])
+b2 = t(coefs2%*%y2)
+for (k in 1:6){
+  b2[,k] = b2[,k]+f[,k]
+}
+b2=as.data.frame(b2)
+listofpanel2[[i]] = b2
+}
+
+plot(forecast(listofpanel2[[27]]$fd_l_price_real, h=5),main="Москва",
+ylab="Логарифмированные цены", xlab ="Период")
+Moscow_for_panel2 = write_xlsx(as.data.frame(forecast(listofpanel2[[27]]$fd_l_price_real, h=5)),"Moscow_for_panel2.xlsx")
+
+plot(forecast(listofpanel2[[58]]$fd_l_price_real, h=5),main="Санкт-Петербург",
+ylab="Логарифмированные цены", xlab ="Период")
+SPB_for_panel2 = write_xlsx(as.data.frame(forecast(listofpanel2[[58]]$fd_l_price_real, h=5)),"SPB_for_panel2.xlsx")
+
+plot(forecast(listofpanel2[[61]]$fd_l_price_real, h=5),main="Свердловская область",
+ylab="Логарифмированные цены", xlab ="Период")
+lines(listofreg2[[61]]$l_price_real)
+SVRDL_for_panel2 = write_xlsx(as.data.frame(forecast(listofpanel2[[61]]$fd_l_price_real, h=5)),"SVRDL_for_panel2.xlsx")
+
+panel2regionfor = list()
+for (i in 1:74){
+forecast = as.data.frame(forecast(listofpanel2[[i]]$fd_l_price_real, h=5))[4,1]
+panel2regionfor[[i]] = forecast}
+
+panel2 = do.call(rbind, lapply(panel2regionfor, as.data.frame))
+panel2$forecast = panel2$`X[[i]]`
+panel2$exp_forecast = exp(panel2$forecast)
+panel2 = rownames_to_column(panel2, var = "region")
+panel2$region = unique(vse_2$region)
+panel2 = panel2 %>% select(-`X[[i]]`)
+#panel2withprice = inner_join(panel2, Price213_2, by = "region")
+panel2$exp_price = Price213_2$`X[[i]]`
+panel2$growth = panel2$exp_forecast/panel2$exp_price - 1
+
+panel2withprice_xlsx = write_xlsx(panel2,"panel2withprice.xlsx")
+
+Mos2 = as.data.frame(exp(listofreg2[[27]]$l_price_real))
+Mos2$panel_price = exp(listofpanel2[[27]]$fd_l_price_real)
+Mos2prices = write_xlsx(Mos2,"Mos2.xlsx")
+
+SPB2 = as.data.frame(exp(listofreg2[[58]]$l_price_real))
+SPB2$panel_price = exp(listofpanel2[[58]]$fd_l_price_real)
+SPB2prices = write_xlsx(SPB2,"SPB2.xlsx")
+
+SVRDL2 = as.data.frame(exp(listofreg2[[61]]$l_price_real))
+SVRDL2$panel_price = exp(listofpanel2[[61]]$fd_l_price_real)
+SVRDL2prices = write_xlsx(SVRDL2,"SVRDL2.xlsx")
+
+
+ARIMA2_Mos_train <- auto.arima(listofreg2[[27]]$l_price_real[1:63])
+ARIMA2_Mos_test <- Arima(listofreg2[[27]]$l_price_real[64:79],model=listofarima2[[27]])
+
+panel2_Mos_train <- as.data.frame(as.matrix(panel_2_vse$residuals[[27]]))$fd_l_price_real[1:122]
+panel2_Mos_test <- as.data.frame(as.matrix(panel_2_vse$residuals[[27]]))$fd_l_price_real[123:153]
+
+ARIMA2_SPB_train <- auto.arima(listofreg2[[58]]$l_price_real[1:63])
+ARIMA2_SPB_test <- Arima(listofreg2[[58]]$l_price_real[64:79],model=listofarima2[[58]])
+
+panel2_SPB_train <- as.data.frame(as.matrix(panel_2_vse$residuals[[58]]))$fd_l_price_real[1:122]
+panel2_SPB_test <- as.data.frame(as.matrix(panel_2_vse$residuals[[58]]))$fd_l_price_real[123:153]
+
+ARIMA2_SVRDL_train <- auto.arima(listofreg2[[61]]$l_price_real[1:63])
+ARIMA2_SVRDL_test <- Arima(listofreg2[[61]]$l_price_real[64:79],model=listofarima2[[61]])
+
+panel2_SVRDL_train <- as.data.frame(as.matrix(panel_2_vse$residuals[[61]]))$fd_l_price_real[1:122]
+panel2_SVRDL_test <- as.data.frame(as.matrix(panel_2_vse$residuals[[61]]))$fd_l_price_real[123:153]
+
+
+rmsfe_model_panel2_Mos=sqrt(mean((panel2_Mos_test)^2))
+rmsfe_model_panel2_Mos
+rmsfe_model_Arima2_Mos = sqrt(mean(residuals(ARIMA2_Mos_test)^2))
+rmsfe_model_Arima2_Mos
+
+rmsfe_model_panel2_spb=sqrt(mean((panel2_SPB_test)^2))
+rmsfe_model_panel2_spb
+rmsfe_model_Arima2_spb = sqrt(mean(residuals(ARIMA2_SPB_test)^2))
+rmsfe_model_Arima2_spb
+
+rmsfe_model_panel2_svrdl=sqrt(mean((panel2_SVRDL_test)^2))
+rmsfe_model_panel2_svrdl
+rmsfe_model_Arima2_svrdl = sqrt(mean(residuals(ARIMA2_SVRDL_test)^2))
+rmsfe_model_Arima2_svrdl
+
+dm.test(
+residuals(ARIMA2_Mos_test),
+panel2_Mos_test,
+h = 1,
+alternative ="less"
+)
+
+dm.test(
+residuals(ARIMA2_SPB_test),
+panel2_SPB_test,
+h = 1,
+alternative ="less"
+)
+
+dm.test(
+residuals(ARIMA2_SVRDL_test),
+panel2_SVRDL_test,
+h = 1,
+alternative ="less"
+)
+
+```
+
+```{r}
+
+
+png('Moscow_panel1.png',width=875, height=540)
+plot(Moscow_for_panel_1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,360), main="Москва",
+ylab="Цена за 1 кв. м. (в тыс. руб.)", xlab ="Период", xaxt = "n", cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(Moscow_for_panel_1_plot$`Прогноз реальных`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(Moscow_for_panel_1_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(Moscow_for_panel_1_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(Moscow_for_panel_1_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(Moscow_for_panel_1_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off() 
+
+png('SVRDL_panel1.png',width=875, height=540)
+plot(SVRDL_for_panel_1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,150), main="Свердловская область",
+ylab="Цена за 1 кв. м. (в тыс. руб.)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t],cex.axis = 1.4)
+lines(SVRDL_for_panel_1_plot$`Прогноз, реальные`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SVRDL_for_panel_1_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_for_panel_1_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_for_panel_1_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(SVRDL_for_panel_1_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SPB_panel1.png',width=875, height=540)
+plot(SPB_for_panel_1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,320), main="Санкт-Петербург",
+ylab="Цена за 1 кв. м. (в тыс. руб.)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t],cex.axis = 1.4)
+lines(SPB_for_panel_1_plot$`Прогноз, реальные`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SPB_for_panel_1_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_for_panel_1_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_for_panel_1_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(SPB_for_panel_1_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+```
+
+```{r}
+#SVRDL_for_panel2_2_plot <- read_excel("SVRDL_for_panel2 (2).xlsx")
+#SPB_for_panel2_2_plot <- read_excel("SPB_for_panel2 (2).xlsx")
+#Moscow_for_panel2_2_plot <- read_excel("Moscow_for_panel2 (2).xlsx")
+png('Moscow_panel2.png',width=875, height=540)
+plot(Moscow_for_panel2_2_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,360), main="Москва",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(Moscow_for_panel2_2_plot$`Прогноз реальных`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(Moscow_for_panel2_2_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(Moscow_for_panel2_2_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(Moscow_for_panel2_2_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(Moscow_for_panel2_2_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SVRDL_panel2.png',width=875, height=540)
+plot(SVRDL_for_panel2_2_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,150), main="Свердловская область",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SVRDL_for_panel2_2_plot$`Прогноз, реальные`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SVRDL_for_panel2_2_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_for_panel2_2_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_for_panel2_2_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(SVRDL_for_panel2_2_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SPB_panel2.png',width=875, height=540)
+plot(SPB_for_panel2_2_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,250), main="Санкт-Петербург",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SPB_for_panel2_2_plot$`Прогноз, реальные`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SPB_for_panel2_2_plot$`Нижние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_for_panel2_2_plot$`Верхние 80%, реальные`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_for_panel2_2_plot$`Нижние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+lines(SPB_for_panel2_2_plot$`Верхние 95%, реальные`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+```
+
+```{r}
+#Mos_ARIMA1_plot <- read_excel("Mos_ARIMA1.xlsx")
+#SPB_ARIMA1_plot <- read_excel("SPB_ARIMA1.xlsx")
+#SVRDL_ARIMA1_plot <- read_excel("SVRDL_ARIMA1.xlsx")
+png('Moscow_ARIMA1.jpg',width=875, height=540)
+plot(Mos_ARIMA1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,500), main="Москва",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(Mos_ARIMA1_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(Mos_ARIMA1_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(Mos_ARIMA1_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(Mos_ARIMA1_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(Mos_ARIMA1_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SVRDL_ARIMA1.jpg',width=875, height=540)
+plot(SVRDL_ARIMA1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,150), main="Свердловская область",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SVRDL_ARIMA1_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SVRDL_ARIMA1_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_ARIMA1_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_ARIMA1_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(SVRDL_ARIMA1_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SPB_ARIMA1.jpg',width=875, height=540)
+plot(SPB_ARIMA1_plot$Цена/1000, type ="l",lwd = 2,ylim = c(0,350), main="Санкт-Петербург",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SPB_ARIMA1_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SPB_ARIMA1_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_ARIMA1_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_ARIMA1_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(SPB_ARIMA1_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+```
+
+```{r}
+#Mos_ARIMA2_plot <- read_excel("Moscow_for2.xlsx")
+#SPB_ARIMA2_plot <- read_excel("SPB_for2.xlsx")
+#SVRDL_ARIMA2_plot <- read_excel("SVRDL_for2.xlsx")
+
+png('Moscow_ARIMA2.jpg',width=875, height=540)
+plot(Mos_ARIMA2_plot$Цены/1000, type ="l",lwd = 2,ylim = c(0,450), main="Москва",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(Mos_ARIMA2_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(Mos_ARIMA2_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(Mos_ARIMA2_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(Mos_ARIMA2_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(Mos_ARIMA2_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SVRDL_ARIMA2.jpg',width=875, height=540)
+plot(SVRDL_ARIMA2_plot$Цены/1000, type ="l",lwd = 2,ylim = c(0,150), main="Свердловская область",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SVRDL_ARIMA2_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SVRDL_ARIMA2_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_ARIMA2_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SVRDL_ARIMA2_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(SVRDL_ARIMA2_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+
+png('SPB_ARIMA2.jpg',width=875, height=540)
+plot(SPB_ARIMA2_plot$Цены/1000, type ="l",lwd = 2,ylim = c(0,300), main="Санкт-Петербург",
+ylab="Цена за 1 кв. м. (в тыс. рублей)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_t, labels=Moscow_for_panel_1_plot$Период[vSel_t], cex.axis = 1.4)
+lines(SPB_ARIMA2_plot$`Прогноз`/1000, col = "darkblue", lwd  = 3, lty = 2)
+lines(SPB_ARIMA2_plot$`Нижние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_ARIMA2_plot$`Верхние 80%`/1000, col = "cadetblue4", lwd = 3)
+lines(SPB_ARIMA2_plot$`Нижние 95%`/1000, col = "cadetblue3", lwd = 3)
+lines(SPB_ARIMA2_plot$`Верхние 95%`/1000, col = "cadetblue3", lwd = 3)
+legend(x = "topleft",          # Position
+       legend = c("Цена", "Прогноз", "80% дов. интервал", "90% дов.интервал"),  # Legend texts
+       lty = c(1,2,1,1),           # Line types
+       col = c("black", "darkblue", "cadetblue4", "cadetblue3"),           # Line colors
+       lwd = 3, cex = 1.7,box.lty=1)  # Line width
+dev.off()
+```
+
+```{r}
+#vserus1_suda <- read_excel("vserus1_suda.xlsx")
+#vserus2_suda <- read_excel("vserus2_suda.xlsx")
+
+vSel_tt = grep("_1", vserus1_suda$...4)
+png('vserus1.png',width=875, height=540)
+plot(vserus1_suda$`vse_rus1$price_real`/1000, type ="l",lwd = 2,ylim = c(0,100), main="Российская Федерация, первичный рынок",
+ylab="Цена за 1 кв. м. (в тыс. руб.)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_tt, labels=vserus1_suda$...4[vSel_tt], cex.axis = 1.4)
+dev.off()
+
+png('vserus2.png',width=875, height=540)
+plot(vserus2_suda$`vse_rus$price_real`/1000, type ="l",lwd = 2,ylim = c(0,100), main="Российская Федерация, вторичный рынок",
+ylab="Цена за 1 кв. м. (в тыс. руб.)", xlab ="Период", xaxt = "n",cex.lab=2, cex.axis=2, cex.main=2)
+axis(side=1, at=vSel_tt, labels=vserus1_suda$...4[vSel_tt], cex.axis = 1.4)
+dev.off()
+```
+
